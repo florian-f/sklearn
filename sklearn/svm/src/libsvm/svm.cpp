@@ -2879,6 +2879,21 @@ double PREFIX(predict)(const PREFIX(model) *model, const PREFIX(node) *x)
 	return pred_result;
 }
 
+double PREFIX(jpredict)(const PREFIX(model) *model, const PREFIX(node) *x)
+{
+	int nr_class = model->nr_class;
+	double *dec_values;
+	if(model->param.svm_type == ONE_CLASS ||
+	   model->param.svm_type == EPSILON_SVR ||
+	   model->param.svm_type == NU_SVR)
+		dec_values = Malloc(double, 1);
+	else 
+		dec_values = Malloc(double, nr_class*(nr_class-1)/2);
+	double pred_result = PREFIX(predict_values)(model, x, dec_values);
+	free(dec_values);
+	return pred_result;
+}
+
 double PREFIX(predict_probability)(
 	const PREFIX(model) *model, const PREFIX(node) *x, double *prob_estimates)
 {
