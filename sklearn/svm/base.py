@@ -360,7 +360,7 @@ class BaseLibSVM(BaseEstimator):
 
         svm_type = LIBSVM_IMPL.index(self._impl)
 
-        return libsvm.predict(
+        return libsvm.jpredict(
             X, self.support_, self.support_vectors_, self.n_support_,
             self.dual_coef_, self._intercept_,
             self._label, self.probA_, self.probB_,
@@ -381,7 +381,8 @@ class BaseLibSVM(BaseEstimator):
 
         C = 0.0  # C is not useful here
 
-        return libsvm_sparse.libsvm_sparse_predict(
+	# not yet implemented
+        return libsvm_sparse.libsvm_sparse_jpredict(
             X.data, X.indices, X.indptr,
             self.support_vectors_.data,
             self.support_vectors_.indices,
