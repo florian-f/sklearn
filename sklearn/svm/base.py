@@ -325,6 +325,75 @@ class BaseLibSVM(BaseEstimator):
             self.probability, self.n_support_, self._label,
             self.probA_, self.probB_)
 
+    def jpredict(self, X):
+        """Perform regression on samples in X.
+
+        For an one-class model, +1 or -1 is returned.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape = [n_samples, n_features]
+
+        Returns
+        -------
+        y_pred : array, shape = [n_samples]
+        """
+        X = self._validate_for_predict(X)
+        predict = self._sparse_jpredict if self._sparse else self._dense_jpredict
+        return predict(X)
+
+    def _dense_jpredict(self, X):
+        n_samples, n_features = X.shape
+        X = self._compute_kernel(X)
+        if X.ndim == 1:
+            X = array2d(X, order='C')
+
+        kernel = self.kernel
+        if callable(self.kernel):
+            kernel = 'precomputed'
+            if X.shape[1] != self.shape_fit_[0]:
+                raise ValueError("X.shape[1] = %d should be equal to %d, "
+                                 "the number of samples at training time" %
+                                 (X.shape[1], self.shape_fit_[0]))
+
+        C = 0.0  # C is not useful here
+
+        svm_type = LIBSVM_IMPL.index(self._impl)
+
+        return libsvm.predict(
+            X, self.support_, self.support_vectors_, self.n_support_,
+            self.dual_coef_, self._intercept_,
+            self._label, self.probA_, self.probB_,
+            svm_type=svm_type,
+            kernel=kernel, C=C, nu=self.nu,
+            probability=self.probability, degree=self.degree,
+            shrinking=self.shrinking, tol=self.tol, cache_size=self.cache_size,
+            coef0=self.coef0, gamma=self._gamma, epsilon=self.epsilon)
+
+    def _sparse_jpredict(self, X):
+        X = sp.csr_matrix(X, dtype=np.float64)
+
+        kernel = self.kernel
+        if callable(kernel):
+            kernel = 'precomputed'
+
+        kernel_type = self._sparse_kernels.index(kernel)
+
+        C = 0.0  # C is not useful here
+
+        return libsvm_sparse.libsvm_sparse_predict(
+            X.data, X.indices, X.indptr,
+            self.support_vectors_.data,
+            self.support_vectors_.indices,
+            self.support_vectors_.indptr,
+            self.dual_coef_.data, self._intercept_,
+            LIBSVM_IMPL.index(self._impl), kernel_type,
+            self.degree, self._gamma, self.coef0, self.tol,
+            C, self.class_weight_,
+            self.nu, self.epsilon, self.shrinking,
+            self.probability, self.n_support_, self._label,
+            self.probA_, self.probB_)
+
     def _compute_kernel(self, X):
         """Return the data transformed by a callable kernel"""
         if callable(self.kernel):
