@@ -520,6 +520,23 @@ class BaseSVC(BaseLibSVM, ClassifierMixin):
         y = super(BaseSVC, self).predict(X)
         return self.classes_.take(y.astype(np.int))
 
+    def jpredict(self, X):
+        """Perform classification on samples in X.
+
+        For an one-class model, +1 or -1 is returned.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape = [n_samples, n_features]
+
+        Returns
+        -------
+        y_pred : array, shape = [n_samples]
+            Class labels for samples in X.
+        """
+        y = super(BaseSVC, self).jpredict(X)
+        return self.classes_.take(y.astype(np.int))
+
     def predict_proba(self, X):
         """Compute probabilities of possible outcomes for samples in X.
 
