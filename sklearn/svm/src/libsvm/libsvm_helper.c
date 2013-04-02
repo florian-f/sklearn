@@ -322,18 +322,20 @@ int copy_predict(char *predict, struct svm_model *model, npy_intp *predict_dims,
 }
 
 int copy_jpredict(char *predict, struct svm_model *model, 
-                 npy_intp *predict_dims, char *dec_values)
+                 npy_intp *predict_dims, char *certainty, char *dec_values)
 {
     double *t = (double *) dec_values;
     struct svm_node *predict_nodes;
+    struct svm_node *certainty_nodes;
     npy_intp i;
 
     predict_nodes = dense_to_libsvm((double *) predict, predict_dims);
+    certainty_nodes = dense_to_libsvm((double *) certainty, predict_dims);
 
     if (predict_nodes == NULL)
         return -1;
     for(i=0; i<predict_dims[0]; ++i) {
-        *t = svm_jpredict(model, &predict_nodes[i]);
+        *t = svm_jpredict(model, &predict_nodes[i], &certainty_nodes[i]);
         ++t;
     }
     free(predict_nodes);

@@ -325,7 +325,7 @@ class BaseLibSVM(BaseEstimator):
             self.probability, self.n_support_, self._label,
             self.probA_, self.probB_)
 
-    def jpredict(self, X):
+    def jpredict(self, X, Certainty):
         """Perform regression on samples in X.
 
         For an one-class model, +1 or -1 is returned.
@@ -339,14 +339,16 @@ class BaseLibSVM(BaseEstimator):
         y_pred : array, shape = [n_samples]
         """
         X = self._validate_for_predict(X)
+        Certainty = self._validate_for_predict(Certainty)
         predict = self._sparse_jpredict if self._sparse else self._dense_jpredict
-        return predict(X)
+        return predict(X, Certainty)
 
-    def _dense_jpredict(self, X):
+    def _dense_jpredict(self, X, Certainty):
         n_samples, n_features = X.shape
         X = self._compute_kernel(X)
         if X.ndim == 1:
             X = array2d(X, order='C')
+            Certainty = array2d(Certainty, order='C')
 
         kernel = self.kernel
         if callable(self.kernel):
@@ -364,14 +366,16 @@ class BaseLibSVM(BaseEstimator):
             X, self.support_, self.support_vectors_, self.n_support_,
             self.dual_coef_, self._intercept_,
             self._label, self.probA_, self.probB_,
+            Certainty,
             svm_type=svm_type,
             kernel=kernel, C=C, nu=self.nu,
             probability=self.probability, degree=self.degree,
             shrinking=self.shrinking, tol=self.tol, cache_size=self.cache_size,
             coef0=self.coef0, gamma=self._gamma, epsilon=self.epsilon)
 
-    def _sparse_jpredict(self, X):
+    def _sparse_jpredict(self, X, Certainty):
         X = sp.csr_matrix(X, dtype=np.float64)
+        Certainty = sp.csr_matrix(Certainty, dtype=np.float64)
 
         kernel = self.kernel
         if callable(kernel):
@@ -521,7 +525,7 @@ class BaseSVC(BaseLibSVM, ClassifierMixin):
         y = super(BaseSVC, self).predict(X)
         return self.classes_.take(y.astype(np.int))
 
-    def jpredict(self, X):
+    def jpredict(self, X, Certainty):
         """Perform classification on samples in X.
 
         For an one-class model, +1 or -1 is returned.
@@ -535,7 +539,7 @@ class BaseSVC(BaseLibSVM, ClassifierMixin):
         y_pred : array, shape = [n_samples]
             Class labels for samples in X.
         """
-        y = super(BaseSVC, self).jpredict(X)
+        y = super(BaseSVC, self).jpredict(X, Certainty)
         return self.classes_.take(y.astype(np.int))
 
     def predict_proba(self, X):

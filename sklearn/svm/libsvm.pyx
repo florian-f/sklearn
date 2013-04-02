@@ -331,6 +331,7 @@ def jpredict(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
             np.ndarray[np.int32_t, ndim=1, mode='c'] label,
             np.ndarray[np.float64_t, ndim=1, mode='c'] probA=np.empty(0),
             np.ndarray[np.float64_t, ndim=1, mode='c'] probB=np.empty(0),
+            np.ndarray[np.float64_t, ndim=2, mode='c'] Certainty=np.empty(0),
             int svm_type=0, str kernel='rbf', int degree=3,
             double gamma=0.1, double coef0=0., double tol=1e-3,
             double C=1., double nu=0.5, double epsilon=0.1,
@@ -402,7 +403,7 @@ def jpredict(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
 
     #TODO: use check_model
     dec_values = np.empty(X.shape[0])
-    if copy_jpredict(X.data, model, X.shape, dec_values.data) < 0:
+    if copy_jpredict(X.data, model, X.shape, Certainty.data, dec_values.data) < 0:
         raise MemoryError("We've run out of of memory")
     free_model(model)
     return dec_values

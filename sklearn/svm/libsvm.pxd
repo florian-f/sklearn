@@ -55,7 +55,7 @@ cdef extern from "libsvm_helper.c":
     void copy_SV        (char *, svm_model *, np.npy_intp *)
     int copy_support (char *data, svm_model *model)
     int copy_predict (char *, svm_model *, np.npy_intp *, char *)
-    int copy_jpredict (char *, svm_model *, np.npy_intp *, char *)
+    int copy_jpredict (char *, svm_model *, np.npy_intp *,char *, char *)
     int copy_predict_proba (char *, svm_model *, np.npy_intp *, char *)
     int copy_predict_values(char *, svm_model *, np.npy_intp *, char *, int)
     void copy_nSV     (char *, svm_model *)
