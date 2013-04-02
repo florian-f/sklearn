@@ -57,6 +57,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <float.h>
 #include <string.h>
 #include <stdarg.h>
+#include <iostream>
+#include <string>
 #include "svm.h"
 
 #ifndef _LIBSVM_CPP
@@ -290,7 +292,9 @@ public:
 	virtual ~Kernel();
 
 	static double k_function(const PREFIX(node) *x, const PREFIX(node) *y,
-				 const svm_parameter& param);
+                                const svm_parameter& param);
+	static double jk_function(const PREFIX(node) *x, const PREFIX(node) *y,
+				 const PREFIX(node) *h,const svm_parameter& param);
 	virtual Qfloat *get_Q(int column, int len) const = 0;
 	virtual double *get_QD() const = 0;
 	virtual void swap_index(int i, int j) const	// no so const...
@@ -317,8 +321,10 @@ private:
 	const double coef0;
 
 	static double dot(const PREFIX(node) *px, const PREFIX(node) *py);
+	static double jdot(const PREFIX(node) *px, const PREFIX(node) *py, const PREFIX(node) *h);
 #ifdef _DENSE_REP
 	static double dot(const PREFIX(node) &px, const PREFIX(node) &py);
+	static double jdot(const PREFIX(node) &px, const PREFIX(node) &py, const PREFIX(node) &h);
 #endif
 
 	double kernel_linear(int i, int j) const
@@ -412,6 +418,25 @@ double Kernel::dot(const PREFIX(node) &px, const PREFIX(node) &py)
 		sum += px.values[i] * py.values[i];
 	return sum;
 }
+double Kernel::jdot(const PREFIX(node) *px, const PREFIX(node) *py, const PREFIX(node) *h)
+{
+	double sum = 0;
+
+	int dim = min(px->dim, py->dim);
+	for (int i = 0; i < dim; i++)
+		sum += (h->values)[i] * (px->values)[i] * (py->values)[i];
+	return sum;
+}
+
+double Kernel::jdot(const PREFIX(node) &px, const PREFIX(node) &py, const PREFIX(node) &h)
+{
+	double sum = 0;
+
+	int dim = min(px.dim, py.dim);
+	for (int i = 0; i < dim; i++)
+		sum += h.values[i] * px.values[i] * py.values[i];
+	return sum;
+}
 #else
 double Kernel::dot(const PREFIX(node) *px, const PREFIX(node) *py)
 {
@@ -430,6 +455,34 @@ double Kernel::dot(const PREFIX(node) *px, const PREFIX(node) *py)
 				++py;
 			else
 				++px;
+		}			
+	}
+	return sum;
+}
+double Kernel::jdot(const PREFIX(node) *px, const PREFIX(node) *py, const PREFIX(node) *h)
+{
+	double sum = 0;
+	while(px->index != -1 && py->index != -1)
+	{
+		if(px->index == py->index)
+		{
+			sum += h->value * px->value * py->value;
+			++px;
+			++py;
+			++h;
+		}
+		else
+		{
+			if(px->index > py->index)
+                        {
+				++py;
+				++h;
+                        }
+			else
+                        {
+				++px;
+				++h;
+                        }
 		}			
 	}
 	return sum;
@@ -512,6 +565,89 @@ double Kernel::k_function(const PREFIX(node) *x, const PREFIX(node) *y,
 			return 0;  // Unreachable 
 	}
 }
+
+double Kernel::jk_function(const PREFIX(node) *x, const PREFIX(node) *y,
+			  const PREFIX(node) *h, const svm_parameter& param)
+{
+	switch(param.kernel_type)
+	{
+		case LINEAR:
+			return jdot(x,y,h);
+		case POLY:
+			return powi(param.gamma*jdot(x,y,h)+param.coef0,param.degree);
+		case RBF:
+		{
+			double sum = 0;
+#ifdef _DENSE_REP
+			int dim = min(x->dim, y->dim), i;
+			for (i = 0; i < dim; i++)
+			{
+				double d = h->values[i]*(x->values[i] - y->values[i]);
+				sum += d*d;
+			}
+			for (; i < x->dim; i++)
+				sum += h->values[i] * x->values[i] * x->values[i];
+			for (; i < y->dim; i++)
+				sum += h->values[i] * y->values[i] * y->values[i];
+#else
+			while(x->index != -1 && y->index !=-1)
+			{
+				if(x->index == y->index)
+				{
+					double d = h->value * (x->value - y->value);
+					sum += d*d;
+					++x;
+					++y;
+                                        ++h;
+				}
+				else
+				{
+					if(x->index > y->index)
+					{	
+						sum += h->value * y->value * y->value;
+						++y;
+                                                ++h;
+					}
+					else
+					{
+						sum += h->value * x->value * x->value;
+						++x;
+                                                ++h;
+					}
+				}
+			}
+
+			while(x->index != -1)
+			{
+				sum += h->value * x->value * x->value;
+				++x;
+				++h;
+			}
+
+			while(y->index != -1)
+			{
+				sum += h->value * y->value * y->value;
+				++y;
+				++h;
+			}
+#endif
+			return exp(-param.gamma*sum);
+		}
+		case SIGMOID:
+			return tanh(param.gamma*dot(x,y)+param.coef0);
+		case PRECOMPUTED:  //x: test (validation), y: SV
+                    {
+#ifdef _DENSE_REP
+			return x->values[y->ind];
+#else
+			return x[(int)(y->value)].value;
+#endif
+                    }
+		default:
+			return 0;  // Unreachable 
+	}
+}
+
 
 // An SMO algorithm in Fan et al., JMLR 6(2005), p. 1889--1918
 // Solves:
@@ -2864,6 +3000,93 @@ double PREFIX(predict_values)(const PREFIX(model) *model, const PREFIX(node) *x,
 	}
 }
 
+double PREFIX(jpredict_values)(const PREFIX(model) *model, const PREFIX(node) *x, const PREFIX(node) *h, double* dec_values)
+{
+        int i;
+	if(model->param.svm_type == ONE_CLASS ||
+	   model->param.svm_type == EPSILON_SVR ||
+	   model->param.svm_type == NU_SVR)
+	{
+		double *sv_coef = model->sv_coef[0];
+		double sum = 0;
+
+		
+		for(i=0;i<model->l;i++)
+#ifdef _DENSE_REP
+                    sum += sv_coef[i] * NAMESPACE::Kernel::jk_function(x,model->SV+i,h,model->param);
+#else
+                sum += sv_coef[i] * NAMESPACE::Kernel::jk_function(x,model->SV[i],h,model->param);
+#endif
+		sum -= model->rho[0];
+		*dec_values = sum;
+
+		if(model->param.svm_type == ONE_CLASS)
+			return (sum>0)?1:-1;
+		else
+			return sum;
+	}
+	else
+	{
+		int i;
+		int nr_class = model->nr_class;
+		int l = model->l;
+		
+		double *kvalue = Malloc(double,l);
+		for(i=0;i<l;i++)
+#ifdef _DENSE_REP
+                    kvalue[i] = NAMESPACE::Kernel::jk_function(x,model->SV+i,h,model->param);
+#else
+                kvalue[i] = NAMESPACE::Kernel::jk_function(x,model->SV[i],h,model->param);
+#endif
+
+		int *start = Malloc(int,nr_class);
+		start[0] = 0;
+		for(i=1;i<nr_class;i++)
+			start[i] = start[i-1]+model->nSV[i-1];
+
+		int *vote = Malloc(int,nr_class);
+		for(i=0;i<nr_class;i++)
+			vote[i] = 0;
+
+		int p=0;
+		for(i=0;i<nr_class;i++)
+			for(int j=i+1;j<nr_class;j++)
+			{
+				double sum = 0;
+				int si = start[i];
+				int sj = start[j];
+				int ci = model->nSV[i];
+				int cj = model->nSV[j];
+				
+				int k;
+				double *coef1 = model->sv_coef[j-1];
+				double *coef2 = model->sv_coef[i];
+				for(k=0;k<ci;k++)
+					sum += coef1[si+k] * kvalue[si+k];
+				for(k=0;k<cj;k++)
+					sum += coef2[sj+k] * kvalue[sj+k];
+				sum -= model->rho[p];
+				dec_values[p] = sum;
+
+				if(dec_values[p] > 0)
+					++vote[i];
+				else
+					++vote[j];
+				p++;
+			}
+
+		int vote_max_idx = 0;
+		for(i=1;i<nr_class;i++)
+			if(vote[i] > vote[vote_max_idx])
+				vote_max_idx = i;
+
+		free(kvalue);
+		free(start);
+		free(vote);
+		return model->label[vote_max_idx];
+	}
+}
+
 double PREFIX(predict)(const PREFIX(model) *model, const PREFIX(node) *x)
 {
 	int nr_class = model->nr_class;
@@ -2879,7 +3102,7 @@ double PREFIX(predict)(const PREFIX(model) *model, const PREFIX(node) *x)
 	return pred_result;
 }
 
-double PREFIX(jpredict)(const PREFIX(model) *model, const PREFIX(node) *x)
+double PREFIX(jpredict)(const PREFIX(model) *model, const PREFIX(node) *x, const PREFIX(node) *h)
 {
 	int nr_class = model->nr_class;
 	double *dec_values;
@@ -2889,7 +3112,7 @@ double PREFIX(jpredict)(const PREFIX(model) *model, const PREFIX(node) *x)
 		dec_values = Malloc(double, 1);
 	else 
 		dec_values = Malloc(double, nr_class*(nr_class-1)/2);
-	double pred_result = PREFIX(predict_values)(model, x, dec_values);
+	double pred_result = PREFIX(jpredict_values)(model, x, h, dec_values);
 	free(dec_values);
 	return pred_result;
 }
